@@ -1,0 +1,11 @@
+## Interface: 11303
+## Title: LibInstantHealth-1.0
+## Notes: Library for instant health updates via combat log
+## Version: @project-version@
+## Author: dev7355608
+## X-Curse-Project-ID: 358013
+
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
+
+LibInstantHealth-1.0.xml
