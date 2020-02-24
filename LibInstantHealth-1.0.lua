@@ -125,12 +125,8 @@ local function updateHealth(unit)
     local newHealth = UnitHealth(unit)
     local newHealthMax = UnitHealthMax(unit)
 
-    if newHealth == 0 then
-        if UnitIsFeignDeath(unit) then
-            newHealth = health
-        else
-            newHealth = nil
-        end
+    if newHealth == 0 and not UnitIsFeignDeath(unit) then
+        newHealth = nil
     end
 
     local healthUpdate = newHealth ~= health
@@ -335,28 +331,33 @@ function eventHandlers.SPELL_INSTAKILL(timestamp, event, hideCaster, sourceGUID,
     return nil, -1 / 0
 end
 
-function eventHandlers.SWING_DAMAGE(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing, isOffHand)
-    overkill = overkill and overkill > 0 and overkill or 0
-    local change = overkill - amount
-    return change, -overkill
-end
+-- function eventHandlers.SWING_DAMAGE(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing, isOffHand)
+--     overkill = overkill and overkill > 0 and overkill or 0
+--     local change = overkill - amount
+--     return change, -overkill
+-- end
 
-function eventHandlers.RANGE_DAMAGE(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing, isOffHand)
-    overkill = overkill and overkill > 0 and overkill or 0
-    local change = overkill - amount
-    return change, -overkill
-end
+-- function eventHandlers.RANGE_DAMAGE(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing, isOffHand)
+--     overkill = overkill and overkill > 0 and overkill or 0
+--     local change = overkill - amount
+--     return change, -overkill
+-- end
 
-eventHandlers.SPELL_DAMAGE = eventHandlers.RANGE_DAMAGE
-eventHandlers.SPELL_PERIODIC_DAMAGE = eventHandlers.RANGE_DAMAGE
-eventHandlers.DAMAGE_SPLIT = eventHandlers.RANGE_DAMAGE
-eventHandlers.DAMAGE_SHIELD = eventHandlers.RANGE_DAMAGE
+-- eventHandlers.SPELL_DAMAGE = eventHandlers.RANGE_DAMAGE
+-- eventHandlers.SPELL_PERIODIC_DAMAGE = eventHandlers.RANGE_DAMAGE
+-- eventHandlers.DAMAGE_SPLIT = eventHandlers.RANGE_DAMAGE
+-- eventHandlers.DAMAGE_SHIELD = eventHandlers.RANGE_DAMAGE
 
-function eventHandlers.ENVIRONMENTAL_DAMAGE(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, environmentalType, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing, isOffHand)
-    overkill = overkill and overkill > 0 and overkill or 0
-    local change = overkill - amount
-    return change, -overkill
-end
+-- function eventHandlers.ENVIRONMENTAL_DAMAGE(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, environmentalType, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing, isOffHand)
+--     overkill = overkill and overkill > 0 and overkill or 0
+--     local change = overkill - amount
+--     return change, -overkill
+-- end
+
+-- eventHandlers.SPELL_DAMAGE = eventHandlers.RANGE_DAMAGE
+-- eventHandlers.SPELL_PERIODIC_DAMAGE = eventHandlers.RANGE_DAMAGE
+-- eventHandlers.DAMAGE_SPLIT = eventHandlers.RANGE_DAMAGE
+-- eventHandlers.DAMAGE_SHIELD = eventHandlers.RANGE_DAMAGE
 
 function eventHandlers.SPELL_HEAL(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellId, spellName, spellSchool, amount, overhealing, absorbed, critical)
     local change = amount - overhealing
@@ -395,6 +396,10 @@ function eventHandlers.COMBAT_LOG_EVENT_UNFILTERED()
     end
 
     local change, state = eventHandler(CombatLogGetCurrentEventInfo())
+
+    if health == 0 and UnitIsFeignDeath(unit) then
+        change = 0
+    end
 
     local newHealth = state >= 0 and health + change or nil
 
