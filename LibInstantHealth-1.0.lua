@@ -77,6 +77,7 @@ for i = 1, MAX_RAID_MEMBERS do
 end
 
 local wipe = wipe
+local math = math
 local UnitGUID = UnitGUID
 local UnitHealth = UnitHealth
 local UnitHealthMax = UnitHealthMax
@@ -143,7 +144,7 @@ end
 function InstantHealth.UnitHealth(unit)
     local unitGUID = UnitGUID(unit)
 
-    if not unitGUID or not unitIDs[unitGUID] then
+    if not unitIDs[unitGUID] then
         return UnitHealth(unit)
     end
 
@@ -168,7 +169,7 @@ end
 function InstantHealth.UnitHealthMax(unit)
     local unitGUID = UnitGUID(unit)
 
-    if not unitGUID or not unitIDs[unitGUID] then
+    if not unitIDs[unitGUID] then
         return UnitHealthMax(unit)
     end
 
@@ -177,6 +178,7 @@ end
 
 function eventHandlers.UNIT_PET(unit)
     local unitGUID = UnitGUID(unit)
+
     unit = unitIDs[unitGUID]
 
     if not unit then
@@ -323,12 +325,12 @@ function eventHandlers.UNIT_DIED(timestamp, event, hideCaster, sourceGUID, sourc
     if UnitIsFeignDeath(unitIDs[destGUID]) then
         return 0, 0
     else
-        return nil, -1 / 0
+        return nil, -math.huge
     end
 end
 
 function eventHandlers.SPELL_INSTAKILL(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags)
-    return nil, -1 / 0
+    return nil, -math.huge
 end
 
 -- function eventHandlers.SWING_DAMAGE(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing, isOffHand)
