@@ -1,4 +1,4 @@
-## Interface: 11303
+## Interface: 11304
 ## Title: LibInstantHealth-1.0
 ## Notes: Library for instant health updates via combat log
 ## Version: @project-version@
