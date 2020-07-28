@@ -27,6 +27,11 @@ InstantHealth.eventFrame:SetScript(
 local eventFrame = InstantHealth.eventFrame
 
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+eventFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+eventFrame:RegisterEvent("FORBIDDEN_NAME_PLATE_UNIT_ADDED")
+eventFrame:RegisterEvent("FORBIDDEN_NAME_PLATE_UNIT_REMOVED")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("UNIT_HEALTH")
 eventFrame:RegisterEvent("UNIT_MAXHEALTH")
@@ -54,114 +59,222 @@ if oldminor and oldminor <= 4 then
     InstantHealth.petGUIDs = nil
 end
 
-InstantHealth.unitHealth = InstantHealth.unitHealth or {}
+if oldminor and oldminor <= 5 then
+    InstantHealth.unitHealth = nil
+end
 
-local unitHealth = InstantHealth.unitHealth
+InstantHealth.units = InstantHealth.units or {}
+InstantHealth.unitHealthFrequentEventQueue = InstantHealth.unitHealthFrequentEventQueue or {}
 
-local groupNone = {"player"}
-local groupParty = {"player"}
-local groupRaid = {}
+local units = InstantHealth.units
+local unitHealthFrequentEventQueue = InstantHealth.unitHealthFrequentEventQueue
+local targetGUID = UnitGUID("target")
+
+local UNITS_SOLO = {"player"}
+local UNITS_PARTY = {"player"}
+local UNITS_RAID = {}
 
 for i = 1, MAX_PARTY_MEMBERS do
-    tinsert(groupParty, "party" .. i)
+    tinsert(UNITS_PARTY, "party" .. i)
 end
 
 for i = 1, MAX_RAID_MEMBERS do
-    tinsert(groupRaid, "raid" .. i)
+    tinsert(UNITS_RAID, "raid" .. i)
 end
 
 local UnitGUID = UnitGUID
 local UnitHealth = UnitHealth
 local UnitHealthMax = UnitHealthMax
-local UnitIsFeignDeath = UnitIsFeignDeath
-local UnitIsUnit = UnitIsUnit
-local UnitInRaid = UnitInRaid
 local IsInRaid = IsInRaid
 local GetNumGroupMembers = GetNumGroupMembers
 local CombatLogGetCurrentEventInfo = CombatLogGetCurrentEventInfo
-local C_NamePlate = C_NamePlate
 
+local wipe = wipe
 local bit_band = bit.band
 
 local COMBATLOG_OBJECT_TYPE_PLAYER = COMBATLOG_OBJECT_TYPE_PLAYER
 local COMBATLOG_OBJECT_AFFILIATION_OUTSIDER = COMBATLOG_OBJECT_AFFILIATION_OUTSIDER
-local COMBATLOG_OBJECT_AFFILIATION_PARTY = COMBATLOG_OBJECT_AFFILIATION_PARTY
-local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE
 
-function InstantHealth.UnitHealth(unit)
-    local unitGUID = UnitGUID(unit)
+InstantHealth.eventFrame:SetScript(
+    "OnUpdate",
+    function()
+        for unit in pairs(unitHealthFrequentEventQueue) do
+            local subgroupID = unit.subgroupID
 
-    local health = unitHealth[unitGUID]
+            if subgroupID then
+                callbacks:Fire("UNIT_HEALTH_FREQUENT", subgroupID)
+            end
 
-    if not health or UnitIsFeignDeath(unit) then
-        return UnitHealth(unit)
+            local groupID = unit.groupID
+
+            callbacks:Fire("UNIT_HEALTH_FREQUENT", groupID)
+
+            local nameplateID = unit.nameplateID
+
+            if nameplateID then
+                callbacks:Fire("UNIT_HEALTH_FREQUENT", nameplateID)
+            end
+
+            if unit.guid == targetGUID then
+                callbacks:Fire("UNIT_HEALTH_FREQUENT", "target")
+            end
+        end
+
+        wipe(unitHealthFrequentEventQueue)
+    end
+)
+
+function InstantHealth.UnitHealth(unitID)
+    local unitGUID = UnitGUID(unitID)
+    local unit = units[unitGUID]
+
+    local unitHealth = UnitHealth(unitID)
+    local unitHealthFrequent = unit and unit.healthFrequent
+
+    if not unitHealthFrequent then
+        return unitHealth
     end
 
-    local healthMax = UnitHealthMax(unit)
+    local unitHealthMax = unit.healthMax
 
-    if health <= 0 then
-        health = 1
+    if unitHealthFrequent <= 1 then
+        return 1
     end
 
-    if health > healthMax then
-        health = healthMax
+    if unitHealthFrequent >= unitHealthMax then
+        return unitHealthMax
     end
 
-    return health
+    return unitHealthFrequent
 end
 
 InstantHealth.UnitHealthMax = UnitHealthMax
 
-local function fireEvent(...)
-    callbacks:Fire(...)
+function eventHandlers.PLAYER_TARGET_CHANGED()
+    targetGUID = UnitGUID("target")
 end
 
+function eventHandlers.NAME_PLATE_UNIT_ADDED(event, unitID)
+    local unitGUID = UnitGUID(unitID)
+    local unit = units[unitGUID]
+
+    if unit then
+        unit.nameplateID = unitID
+    end
+end
+
+function eventHandlers.NAME_PLATE_UNIT_REMOVED(event, unitID)
+    local unitGUID = UnitGUID(unitID)
+    local unit = units[unitGUID]
+
+    if unit then
+        unit.nameplateID = nil
+    end
+end
+
+eventHandlers.FORBIDDEN_NAME_PLATE_UNIT_ADDED = eventHandlers.NAME_PLATE_UNIT_ADDED
+eventHandlers.FORBIDDEN_NAME_PLATE_UNIT_REMOVED = eventHandlers.NAME_PLATE_UNIT_REMOVED
+
 function eventHandlers.GROUP_ROSTER_UPDATE()
-    local group
+    local unitIDs
 
     if GetNumGroupMembers() == 0 then
-        group = groupNone
+        unitIDs = UNITS_SOLO
     elseif not IsInRaid() then
-        group = groupParty
+        unitIDs = UNITS_PARTY
     else
-        group = groupRaid
+        unitIDs = UNITS_RAID
     end
 
-    local unitIDs = {}
-
-    for _, unit in ipairs(group) do
-        local unitGUID = UnitGUID(unit)
+    for _, unitID in ipairs(unitIDs) do
+        local unitGUID = UnitGUID(unitID)
 
         if unitGUID then
-            unitIDs[unitGUID] = unit
+            if not units[unitGUID] then
+                units[unitGUID] = {
+                    guid = unitGUID,
+                    health = UnitHealth(unitID),
+                    healthMax = UnitHealthMax(unitID),
+                    healthFrequentUpdate = false,
+                    nameplateID = C_NamePlate.GetNamePlateForUnit(unitID, true)
+                }
 
-            if not unitHealth[unitGUID] then
-                unitHealth[unitGUID] = false
+                assert(units[unitGUID].health)
+                assert(units[unitGUID].healthMax)
+            end
+
+            units[unitGUID].groupID = unitID
+            units[unitGUID].subgroupID = nil
+        end
+    end
+
+    if IsInRaid() then
+        for _, unitID in ipairs(UNITS_PARTY) do
+            local unitGUID = UnitGUID(unitID)
+
+            if unitGUID then
+                units[unitGUID].subgroupID = unitID
             end
         end
     end
 
-    for unitGUID in pairs(unitHealth) do
-        if not unitIDs[unitGUID] then
-            unitHealth[unitGUID] = nil
+    for unitGUID, unit in pairs(units) do
+        if unitGUID ~= UnitGUID(unit.groupID) then
+            units[unitGUID] = nil
         end
     end
 end
 
 eventHandlers.PLAYER_ENTERING_WORLD = eventHandlers.GROUP_ROSTER_UPDATE
 
-function eventHandlers.UNIT_HEALTH(event, unit)
-    local unitGUID = UnitGUID(unit)
+function eventHandlers.UNIT_HEALTH(event, unitID)
+    local unitGUID = UnitGUID(unitID)
+    local unit = units[unitGUID]
 
-    if unitHealth[unitGUID] ~= nil then
-        unitHealth[unitGUID] = UnitHealth(unit)
+    if unit then
+        local unitHealth = UnitHealth(unitID)
+
+        unit.health = unitHealth
+
+        if unitHealth == 0 then
+            unit.healthFrequent = nil
+        else
+            unit.healthFrequent = unitHealth
+        end
+
+        unit.healthMax = UnitHealthMax(unitID)
+
+        unitHealthFrequentEventQueue[unit] = nil
     end
 
-    fireEvent(event, unit)
+    callbacks:Fire(event, unitID)
 end
 
-eventHandlers.UNIT_MAXHEALTH = fireEvent
-eventHandlers.UNIT_HEALTH_FREQUENT = fireEvent
+function eventHandlers.UNIT_MAXHEALTH(event, unitID)
+    local unitGUID = UnitGUID(unitID)
+    local unit = units[unitGUID]
+
+    if unit then
+        local unitHealthMax = UnitHealthMax(unitID)
+
+        if unit.healthMax ~= unitHealthMax then
+            unit.healthMax = unitHealthMax
+        end
+    end
+
+    callbacks:Fire(event, unitID)
+end
+
+function eventHandlers.UNIT_HEALTH_FREQUENT(event, unitID)
+    local unitGUID = UnitGUID(unitID)
+    local unit = units[unitGUID]
+
+    if unit then
+        unitHealthFrequentEventQueue[unit] = nil
+    end
+
+    callbacks:Fire(event, unitID)
+end
 
 local clueEventHandlers = {}
 
@@ -185,7 +298,7 @@ end
 clueEventHandlers.SPELL_PERIODIC_HEAL = clueEventHandlers.SPELL_HEAL
 
 function eventHandlers.COMBAT_LOG_EVENT_UNFILTERED()
-    local _, event, _, _, _, _, _, unitGUID, unitName, unitFlags, _, arg12, arg13, arg14, arg15, arg16 = CombatLogGetCurrentEventInfo()
+    local _, event, _, _, _, _, _, unitGUID, _, unitFlags, _, arg12, arg13, arg14, arg15, arg16 = CombatLogGetCurrentEventInfo()
 
     if bit_band(unitFlags, COMBATLOG_OBJECT_AFFILIATION_OUTSIDER) > 0 or bit_band(unitFlags, COMBATLOG_OBJECT_TYPE_PLAYER) == 0 then
         return
@@ -197,53 +310,26 @@ function eventHandlers.COMBAT_LOG_EVENT_UNFILTERED()
         return
     end
 
-    local health = unitHealth[unitGUID]
+    local unit = units[unitGUID]
 
-    if not health then
+    if not unit then
+        return
+    end
+
+    local unitHealthFrequent = unit.healthFrequent
+
+    if not unitHealthFrequent then
         return
     end
 
     local healthChange = clueEventHandler(arg12, arg13, arg14, arg15, arg16)
 
     if healthChange ~= 0 then
-        unitHealth[unitGUID] = health + healthChange
-
-        local unit1
-
-        if bit_band(unitFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0 then
-            unit1 = "player"
-        elseif bit_band(unitFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0 then
-            if UnitIsUnit(unitName, "party1") then
-                unit1 = "party1"
-            elseif UnitIsUnit(unitName, "party2") then
-                unit1 = "party2"
-            elseif UnitIsUnit(unitName, "party3") then
-                unit1 = "party3"
-            else
-                unit1 = "party4"
-            end
-        end
-
-        if unit1 then
-            fireEvent("UNIT_HEALTH_FREQUENT", unit1)
-        end
-
-        local unit2 = groupRaid[UnitInRaid(unitName)]
-
-        if unit2 then
-            fireEvent("UNIT_HEALTH_FREQUENT", unit2)
-        end
-
-        local unit = unit2 or unit1
-
-        local nameplate = C_NamePlate.GetNamePlateForUnit(unit, true)
-
-        if nameplate then
-            fireEvent("UNIT_HEALTH_FREQUENT", nameplate.UnitFrame.unit)
-        end
-
-        if UnitIsUnit(unit, "target") then
-            fireEvent("UNIT_HEALTH_FREQUENT", "target")
-        end
+        unit.healthFrequent = unitHealthFrequent + healthChange
+        unitHealthFrequentEventQueue[unit] = true
     end
+end
+
+if IsLoggedIn() then
+    eventHandlers.PLAYER_ENTERING_WORLD()
 end
